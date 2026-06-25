@@ -1,9 +1,68 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import requests
+from datetime import datetime
 
 st.set_page_config(page_title="금융 거래 대시보드", layout="wide")
 st.title("금융 거래 통합 대시보드")
+
+# ── 서울 날씨 (Open-Meteo) ────────────────────────────────────────
+st.subheader("서울 현재 날씨")
+
+@st.cache_data(ttl=600)
+def fetch_weather():
+    url = (
+        "https://api.open-meteo.com/v1/forecast"
+        "?latitude=37.5665&longitude=126.9780"
+        "&current=temperature_2m,weathercode"
+        "&hourly=temperature_2m"
+        "&timezone=Asia%2FSeoul"
+        "&forecast_days=1"
+    )
+    resp = requests.get(url, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
+
+WMO_CODES = {
+    0: "맑음", 1: "대체로 맑음", 2: "부분 흐림", 3: "흐림",
+    45: "안개", 48: "결빙 안개",
+    51: "가벼운 이슬비", 53: "이슬비", 55: "짙은 이슬비",
+    61: "가벼운 비", 63: "비", 65: "강한 비",
+    71: "가벼운 눈", 73: "눈", 75: "강한 눈",
+    80: "소나기", 81: "강한 소나기", 82: "폭우",
+    95: "뇌우", 96: "우박 뇌우", 99: "강한 우박 뇌우",
+}
+
+try:
+    weather = fetch_weather()
+    current_temp = weather["current"]["temperature_2m"]
+    current_code = weather["current"]["weathercode"]
+    condition    = WMO_CODES.get(current_code, f"코드 {current_code}")
+
+    wc1, wc2 = st.columns(2)
+    with wc1:
+        st.metric("현재 기온 (서울)", f"{current_temp} °C")
+    with wc2:
+        st.metric("날씨 상태", condition)
+
+    # 시간별 기온 차트
+    hours = weather["hourly"]["time"]          # 예: ["2026-06-25T00:00", ...]
+    temps = weather["hourly"]["temperature_2m"]
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    hourly_df = pd.DataFrame({"시간": hours, "기온(°C)": temps})
+    hourly_df = hourly_df[hourly_df["시간"].str.startswith(today_str)].copy()
+    hourly_df["시간"] = hourly_df["시간"].str[11:16]   # "HH:MM"
+    hourly_df = hourly_df.set_index("시간")
+
+    st.caption("오늘 시간별 기온")
+    st.line_chart(hourly_df)
+
+except Exception as e:
+    st.warning(f"날씨 데이터를 불러오지 못했습니다: {e}")
+
+st.divider()
 
 # ── 파일 업로드 ───────────────────────────────────────────────────
 st.sidebar.header("데이터 업로드")
